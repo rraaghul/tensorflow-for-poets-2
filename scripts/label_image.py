@@ -20,13 +20,16 @@ from __future__ import print_function
 import argparse
 import sys
 import time
-
+import re
+import csv
+import os
 import numpy as np
 import tensorflow as tf
 
 def load_graph(model_file):
   graph = tf.Graph()
   graph_def = tf.GraphDef()
+
 
   with open(model_file, "rb") as f:
     graph_def.ParseFromString(f.read())
@@ -71,15 +74,15 @@ if __name__ == "__main__":
   file_name = "tf_files/flower_photos/daisy/3475870145_685a19116d.jpg"
   model_file = "tf_files/retrained_graph.pb"
   label_file = "tf_files/retrained_labels.txt"
-  input_height = 224
-  input_width = 224
-  input_mean = 128
-  input_std = 128
-  input_layer = "input"
+  input_height = 299
+  input_width = 299
+  input_mean = 0
+  input_std = 255
+  input_layer = "Mul"
   output_layer = "final_result"
 
   parser = argparse.ArgumentParser()
-  parser.add_argument("--image", help="image to be processed")
+  parser.add_argument("--image_dir", help="image to be processed")
   parser.add_argument("--graph", help="graph/model to be executed")
   parser.add_argument("--labels", help="name of file containing labels")
   parser.add_argument("--input_height", type=int, help="input height")
@@ -92,8 +95,8 @@ if __name__ == "__main__":
 
   if args.graph:
     model_file = args.graph
-  if args.image:
-    file_name = args.image
+  if args.image_dir:
+    file_dir = args.image_dir
   if args.labels:
     label_file = args.labels
   if args.input_height:
@@ -110,28 +113,24 @@ if __name__ == "__main__":
     output_layer = args.output_layer
 
   graph = load_graph(model_file)
-  t = read_tensor_from_image_file(file_name,
-                                  input_height=input_height,
-                                  input_width=input_width,
-                                  input_mean=input_mean,
-                                  input_std=input_std)
-
   input_name = "import/" + input_layer
   output_name = "import/" + output_layer
-  input_operation = graph.get_operation_by_name(input_name);
-  output_operation = graph.get_operation_by_name(output_name);
-
-  with tf.Session(graph=graph) as sess:
-    start = time.time()
-    results = sess.run(output_operation.outputs[0],
-                      {input_operation.outputs[0]: t})
-    end=time.time()
-  results = np.squeeze(results)
-
-  top_k = results.argsort()[-5:][::-1]
+  input_operation = graph.get_operation_by_name(input_name)
+  output_operation = graph.get_operation_by_name(output_name)
   labels = load_labels(label_file)
-
-  print('\nEvaluation time (1-image): {:.3f}s\n'.format(end-start))
-  template = "{} (score={:0.5f})"
-  for i in top_k:
-    print(template.format(labels[i], results[i]))
+  with open('submisson.csv','w') as csvfile:
+    writer = csv.writer(csvfile, dialect='excel')
+    writer.writerow(['id'] + labels)
+    with tf.Session(graph=graph) as sess:
+      for file_name in os.listdir(file_dir):
+        t = read_tensor_from_image_file(file_dir + file_name,
+                                        input_height=input_height,
+                                        input_width=input_width,
+                                        input_mean=input_mean,
+                                        input_std=input_std)
+        start = time.time()
+        results = sess.run(output_operation.outputs[0],
+                          {input_operation.outputs[0]: t})
+        end=time.time()
+        results = [file_name.strip('.jpg')] + results[0].tolist()
+        writer.writerow(results)
